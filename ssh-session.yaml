@@ -1,0 +1,4 @@
+- hosts: servers 
+  tasks:
+  - name: "connect via ssh"
+    shell: for i in $(cat servers); do ssh ansible@$i; done

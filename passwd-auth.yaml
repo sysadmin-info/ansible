@@ -1,0 +1,7 @@
+- hosts: servers
+  become: true
+  tasks:
+  - name: "replace on sshd_config"
+    shell: sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config
+  - name: "Restart ssh"
+    shell: systemctl restart sshd

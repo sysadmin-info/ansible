@@ -1,0 +1,52 @@
+---
+- name: Install K3s on Master Node
+  hosts: master
+  become: yes
+  tasks:
+    - name: Install K3s
+      shell: curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik,servicelb" K3S_KUBECONFIG_MODE="644" sh -
+
+    - name: Install NGINX as ingress controller
+      shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/static/provider/baremetal/deploy.yaml
+
+    - name: Create a patch file for NGINX ingress controller 
+      shell:
+        cmd: |
+          cat > ingress.yaml << EOF
+            spec:
+              template:
+                spec:
+                  hostNetwork: true
+          EOF
+      args:
+        executable: /bin/bash
+
+    - name: patch NGINX ingress controller
+      shell: kubectl patch deployment ingress-nginx-controller -n ingress-nginx --patch "$(cat ingress.yaml)"
+
+    - name: Get K3s node token
+      shell: cat /var/lib/rancher/k3s/server/node-token
+      register: k3s_token
+      delegate_to: "{{ inventory_hostname }}"
+
+
+
+- name: Install K3s on Worker Nodes
+  hosts: workers
+  become: yes
+  vars:
+    k3s_url: "https://{{ hostvars['master-node']['ansible_host'] }}:6443"
+    k3s_token: "{{ hostvars['master-node'].k3s_token.stdout }}"
+  tasks:
+    - name: Join worker nodes to the cluster
+      shell: "curl -sfL https://get.k3s.io | K3S_URL={{ k3s_url }} K3S_TOKEN={{ k3s_token }} sh -"
+
+
+- name: Label K3s workers on Master Node
+  hosts: master
+  become: yes
+  tasks:
+    - name: Label worker 1
+      shell: kubectl label nodes worker1 kubernetes.io/role=worker
+    - name: Label worker 2
+      shell: kubectl label nodes worker2 kubernetes.io/role=worker

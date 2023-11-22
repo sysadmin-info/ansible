@@ -1,11 +1,15 @@
-servers:
-  hosts:
-    worker1:
-      ansible_host: 10.10.0.3
-      ansible_user: ansible 
-    worker2:
-      ansible_host: 10.10.0.4
-      ansible_user: ansible   
+all:
+  children:
     master:
-      ansible_host: 10.10.0.2
-      ansible_user: ansible
+      hosts:
+        master-node:
+          ansible_host: 10.10.0.112
+          ansible_user: ansible
+    workers:
+      hosts:
+        worker-node-1:
+          ansible_host: 10.10.0.102
+          ansible_user: ansible
+        worker-node-2:
+          ansible_host: 10.10.0.104
+          ansible_user: ansible

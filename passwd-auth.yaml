@@ -1,4 +1,4 @@
-- hosts: servers
+- hosts: all 
   become: true
   tasks:
   - name: "replace on sshd_config"

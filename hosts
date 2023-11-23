@@ -13,3 +13,11 @@ all:
         worker-node-2:
           ansible_host: 10.10.0.104
           ansible_user: ansible
+    portainer:
+      hosts:
+        AdGuard:
+          ansible_host: 10.10.0.108
+          ansible_user: ansible
+        nginx-proxy-manager:
+          ansible_host: 10.10.0.137 
+          ansible_user: ansible

@@ -1,0 +1,19 @@
+---
+- name: Upgrade Portainer on AdGuard Home LXC container in Proxmox
+  hosts: portainer
+  become: yes
+  tasks:
+    - name: Stop Portainer
+      shell: docker stop portainer 
+
+    - name: Remove Portainer
+      shell: docker rm portainer
+
+    - name: Create the volume that Portainer Server will use to store its database
+      shell: docker volume create portainer_data
+
+    - name: Download newest Portainer 
+      shell: sudo docker pull portainer/portainer-ce:latest 
+
+    - name: Run Portainer 
+      shell: docker run -d -p 8000:8000 -p 9443:9443 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest

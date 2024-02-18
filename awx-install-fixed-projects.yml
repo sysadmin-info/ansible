@@ -2,20 +2,31 @@
 - name: Install AWX
   hosts: localhost
   become: yes
+  vars:
+    awx_namespace: awx
+    project_directory: /var/lib/awx/projects
+    storage_size: 2Gi
+
   tasks:
     - name: Download Kustomize with curl
-      shell: curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+      ansible.builtin.shell:
+        cmd: curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+        creates: /usr/local/bin/kustomize
 
     - name: Move Kustomize to the /usr/local/bin directory
-      shell: mv kustomize /usr/local/bin
+      ansible.builtin.shell:
+        cmd: mv kustomize /usr/local/bin
+        args:
+          creates: /usr/local/bin/kustomize
 
-    - name: Create namespace awx
-      shell: kubectl create namespace awx
+    - name: Ensure namespace {{ awx_namespace }} exists
+      ansible.builtin.shell:
+        cmd: kubectl create namespace {{ awx_namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
-    - name: Create awx.yaml 
-      shell:
-        cmd: |
-          cat > awx.yaml << EOF
+    - name: Generate AWX resource file
+      ansible.builtin.copy:
+        dest: "./awx.yaml"
+        content: |
           ---
           apiVersion: awx.ansible.com/v1beta1
           kind: AWX
@@ -26,77 +37,67 @@
             nodeport_port: 30060
             projects_persistence: true
             projects_existing_claim: awx-projects-claim
-          EOF          
-      args:
-        executable: /bin/bash
 
-    - name: Create variable RELEASE_TAG
-      shell: RELEASE_TAG=$(curl -s https://api.github.com/repos/ansible/awx-operator/releases/latest | grep tag_name | cut -d '"' -f 4)
+    - name: Fetch latest release tag of AWX Operator
+      ansible.builtin.shell:
+        cmd: curl -s https://api.github.com/repos/ansible/awx-operator/releases/latest | grep tag_name | cut -d '"' -f 4
+      register: release_tag
+      changed_when: false
 
-    - name: Display variable RELEASE_TAG
-      shell: echo $RELEASE_TAG
-
-    - name: Create pv.yml and pvc.yml for project directory
-      shell:
-        cmd: |
-          cat > pv.yml << EOF
-          ---
-          apiVersion: v1
-          kind: PersistentVolume
-          metadata:
-            name: awx-projects-volume
-          spec:
-            accessModes:
-              - ReadWriteOnce
-            persistentVolumeReclaimPolicy: Retain
-            capacity:
-              storage: 2Gi
-            storageClassName: awx-projects-volume
-            hostPath:
-              path: /var/lib/awx/projects
-          EOF
-
-          cat > pvc.yml << EOF
-          ---
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: awx-projects-claim
-          spec:
-            accessModes:
-              - ReadWriteOnce
-            volumeMode: Filesystem
-            resources:
-              requests:
-                storage: 2Gi
-            storageClassName: awx-projects-volume
-          EOF          
-      args:
-        executable: /bin/bash
-
-    - name: Apply pv.yml
-      shell: kubectl apply -f pv.yml
-
-    - name: Apply pvc.yml in the awx namespace
-      shell: kubectl -n awx apply -f pvc.yml
+    - name: Generate PV and PVC resource files
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        content: "{{ item.content }}"
+      loop:
+        - dest: "./pv.yml"
+          content: |
+            ---
+            apiVersion: v1
+            kind: PersistentVolume
+            metadata:
+              name: awx-projects-volume
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              persistentVolumeReclaimPolicy: Retain
+              capacity:
+                storage: {{ storage_size }}
+              storageClassName: awx-projects-volume
+              hostPath:
+                path: {{ project_directory }}
+        - dest: "./pvc.yml"
+          content: |
+            ---
+            apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: awx-projects-claim
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              volumeMode: Filesystem
+              resources:
+                requests:
+                  storage: {{ storage_size }}
+              storageClassName: awx-projects-volume
 
     - name: Create kustomization.yaml
-      shell:
-        cmd: |
-          cat > kustomization.yaml << EOF
+      ansible.builtin.copy:
+        dest: "./kustomization.yaml"
+        content: |
           ---
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
           resources:
-            - github.com/ansible/awx-operator/config/default?ref=$RELEASE_TAG
+            - github.com/ansible/awx-operator/config/default?ref={{ release_tag.stdout }}
+            - pv.yml
+            - pvc.yml
             - awx.yaml
           images:
             - name: quay.io/ansible/awx-operator
-              newTag: $RELEASE_TAG
-          namespace: awx
-          EOF          
-      args:
-        executable: /bin/bash
+              newTag: {{ release_tag.stdout }}
+          namespace: {{ awx_namespace }}
 
-    - name: Kick off the building of the ansible awx
-      shell: kustomize build . | kubectl apply -f -
+    - name: Apply Kustomize configuration
+      ansible.builtin.shell:
+        cmd: kustomize build . | kubectl apply -f -

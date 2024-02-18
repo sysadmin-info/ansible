@@ -16,8 +16,8 @@
     - name: Move Kustomize to the /usr/local/bin directory
       ansible.builtin.shell:
         cmd: mv kustomize /usr/local/bin
-        args:
-          creates: /usr/local/bin/kustomize
+      args:
+        creates: /usr/local/bin/kustomize
 
     - name: Ensure namespace {{ awx_namespace }} exists
       ansible.builtin.shell:

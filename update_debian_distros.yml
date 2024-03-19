@@ -1,0 +1,34 @@
+---
+- name: Update all systems and restart if needed only if updates are available
+  hosts: "{{ fqdn }}"
+  become: yes
+  vars_files:
+    - vars/fqdn.yml
+  tasks:
+    # Preliminary checks for available updates
+    - name: Check for available updates (apt)
+      apt:
+        update_cache: yes
+        upgrade: 'no' # Just check for updates without installing
+        cache_valid_time: 3600 # Avoid unnecessary cache updates
+      register: apt_updates
+      changed_when: apt_updates.changed
+      when: ansible_facts['os_family'] == "Debian"
+
+    # Update systems based on the checks
+    # Debian-based systems update and restart
+    - name: Update apt systems if updates are available
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      when: ansible_facts['os_family'] == "Debian" and apt_updates.changed
+
+    - name: Check if restart is needed on Debian based systems
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+      when: ansible_facts['os_family'] == "Debian" and apt_updates.changed
+
+    - name: Restart Debian based system if required
+      ansible.builtin.reboot:
+      when: ansible_facts['os_family'] == "Debian" and apt_updates.changed and reboot_required_file.stat.exists

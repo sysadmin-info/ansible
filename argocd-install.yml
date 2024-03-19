@@ -1,0 +1,67 @@
+---
+- name: Install Argo CD
+hosts: localhost
+become: yes
+tasks:
+- name: Create argocd namespace
+  shell: kubectl create namespace argocd
+  ignore_errors: yes
+
+- name: Add Argo CD repository
+  shell: helm repo add argo https://argoproj.github.io/argo-helm
+  ignore_errors: yes
+
+- name: Update repository using Helm
+  shell: helm repo update
+  ignore_errors: yes
+
+- name: Install Argo CD using Helm
+  shell: helm install -n argocd argocd argo/argo-cd
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  ignore_errors: yes
+
+- name: Create Ingress for Argo CD
+  shell: |
+    kubectl apply -f - <<EOF
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: argocd-ingress
+      namespace: argocd
+      annotations:
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    spec:
+      ingressClassName: nginx
+      rules:
+      - host: argocd.sysadmin.homes
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 443
+    EOF    
+  ignore_errors: yes
+
+- name: Pause for 1 minute to allow Argo CD to initialize
+  pause:
+    minutes: 1
+
+- name: Get argocd-cm configmap
+  shell: kubectl -n argocd get configmap argocd-cm -o yaml > /tmp/argocd-cm.yml
+  ignore_errors: yes
+
+- name: Update argocd-cm configmap
+  replace:
+    path: /tmp/argocd-cm.yml
+    regexp: 'example.com'
+    replace: 'sysadmin.homes'
+  ignore_errors: yes
+
+- name: Apply the modified argocd-cm configmap
+  shell: kubectl apply -f /tmp/argocd-cm.yml
+  ignore_errors: yes

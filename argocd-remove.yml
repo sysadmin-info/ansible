@@ -1,0 +1,40 @@
+---
+- name: Remove Argo CD
+hosts: localhost
+become: yes
+tasks:
+- name: scales all deployments in the argocd namespace to zero replicas
+  shell: kubectl scale deployment --all --replicas=0 -n argocd
+  ignore_errors: yes
+
+- name: Remove Argo CD deployments
+  shell: kubectl delete deployment argocd-repo-server argocd-applicationset-controller argocd-notifications-controller argocd-redis argocd-dex-server argocd-server -n argocd
+  ignore_errors: yes
+
+- name: Remove Argo CD services
+  shell: kubectl delete service argocd-applicationset-controller argocd-repo-server argocd-dex-server argocd-redis argocd-server -n argocd
+  ignore_errors: yes 
+
+- name: Remove Argo CD statefulsets
+  shell: kubectl delete statefulset argocd-application-controller -n argocd
+  ignore_errors: yes            
+
+- name: Remove Argo CD service accounts
+  shell: kubectl delete serviceaccount default argocd-dex-server argocd-application-controller argocd-server argocd-notifications-controller argocd-applicationset-controller argocd-repo-server -n argocd
+  ignore_errors: yes
+
+- name: Remove Argo CD role bindings
+  shell: kubectl delete rolebinding argocd-repo-server argocd-application-controller argocd-dex-server argocd-server argocd-notifications-controller argocd-applicationset-controller -n argocd
+  ignore_errors: yes
+
+- name: remove Argo CD roles
+  shell: kubectl delete role argocd-server argocd-applicationset-controller argocd-dex-server argocd-repo-server argocd-notifications-controller argocd-application-controller -n argocd
+  ignore_errors: yes
+
+- name: Remove Argo CD ingress in namespace argocd
+  shell: kubectl delete ingress argocd-ingress -n argocd 
+  ignore_errors: yes
+
+- name: Remove namespace argocd
+  shell: kubectl delete namespace argocd
+  ignore_errors: yes

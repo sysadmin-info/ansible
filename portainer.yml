@@ -1,19 +1,70 @@
 ---
-- name: Upgrade Portainer on AdGuard Home LXC container in Proxmox
-  hosts: portainer
-  become: yes
+- name: Upgrade Portainer
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    portainer_name: portainer
+    portainer_image: portainer/portainer-ce:latest
+    portainer_volume: portainer_data
+
   tasks:
-    - name: Stop Portainer
-      shell: docker stop portainer 
+    - name: Ensure Docker service is running
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
 
-    - name: Remove Portainer
-      shell: docker rm portainer
+    - name: Ensure Portainer data volume exists
+      ansible.builtin.command:
+        cmd: docker volume create {{ portainer_volume }}
+      register: portainer_volume_result
+      changed_when: "'Created' in portainer_volume_result.stdout"
 
-    - name: Create the volume that Portainer Server will use to store its database
-      shell: docker volume create portainer_data
+    - name: Pull latest Portainer image
+      ansible.builtin.command:
+        cmd: docker pull {{ portainer_image }}
+      register: portainer_pull
+      changed_when: "'Downloaded newer image' in portainer_pull.stdout or 'Status: Downloaded newer image' in portainer_pull.stdout"
 
-    - name: Download newest Portainer 
-      shell: sudo docker pull portainer/portainer-ce:latest 
+    - name: Stop Portainer container if exists
+      ansible.builtin.command:
+        cmd: docker stop {{ portainer_name }}
+      register: portainer_stop
+      failed_when: false
+      changed_when: portainer_stop.rc == 0
 
-    - name: Run Portainer 
-      shell: docker run -d -p 8000:8000 -p 9443:9443 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest
+    - name: Remove Portainer container if exists
+      ansible.builtin.command:
+        cmd: docker rm {{ portainer_name }}
+      register: portainer_rm
+      failed_when: false
+      changed_when: portainer_rm.rc == 0
+
+    - name: Run Portainer with latest image
+      ansible.builtin.command:
+        cmd: >
+          docker run -d
+          --name {{ portainer_name }}
+          --restart=always
+          -p 8000:8000
+          -p 9443:9443
+          -v /var/run/docker.sock:/var/run/docker.sock
+          -v {{ portainer_volume }}:/data
+          {{ portainer_image }}
+
+    - name: Verify Portainer HTTPS endpoint
+      ansible.builtin.uri:
+        url: https://127.0.0.1:9443
+        method: HEAD
+        validate_certs: false
+        status_code: 200
+      register: portainer_check
+      retries: 20
+      delay: 3
+      until: portainer_check.status == 200
+
+    - name: Show pulled image result
+      ansible.builtin.debug:
+        var: portainer_pull.stdout_lines

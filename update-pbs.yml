@@ -1,0 +1,69 @@
+---
+- name: Update Proxmox Backup Server
+  hosts: all
+  become: yes
+  vars:
+    ansible_port: 22
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade PBS packages
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot PBS if required
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+      when: reboot_required_file.stat.exists
+
+    - name: Wait for PBS after possible reboot
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 10
+
+    - name: Check PBS proxy service
+      ansible.builtin.systemd:
+        name: proxmox-backup-proxy
+        state: started
+        enabled: yes
+
+    - name: Check PBS API service
+      ansible.builtin.systemd:
+        name: proxmox-backup
+        state: started
+        enabled: yes
+
+    - name: Check PBS network config commit service
+      ansible.builtin.systemd:
+        name: pbs-network-config-commit
+        state: started
+        enabled: yes
+      failed_when: false
+
+    - name: Show PBS version
+      ansible.builtin.command: proxmox-backup-manager version
+      register: pbs_version
+      changed_when: false
+
+    - name: Display PBS version
+      ansible.builtin.debug:
+        var: pbs_version.stdout_lines
+
+    - name: Show PBS datastore list
+      ansible.builtin.command: proxmox-backup-manager datastore list
+      register: pbs_datastores
+      changed_when: false
+      failed_when: false
+
+    - name: Display PBS datastore list
+      ansible.builtin.debug:
+        var: pbs_datastores.stdout_lines

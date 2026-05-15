@@ -1,0 +1,37 @@
+---
+
+- name: Update all systems and restart if needed only if updates are available
+  hosts: all
+  become: yes
+  tasks:
+    # Preliminary checks for available updates on Red Hat systems
+    - name: Check for available updates (dnf)
+      ansible.builtin.shell: dnf check-update
+      register: dnf_check_update
+      changed_when: dnf_check_update.rc == 100
+      failed_when: dnf_check_update.rc not in [0, 100]
+      when: ansible_facts['os_family'] == "RedHat"
+
+    # Ensure yum-utils or dnf-utils is installed
+    - name: Ensure yum-utils or dnf-utils is installed
+      ansible.builtin.package:
+        name: "{{ 'yum-utils' if ansible_facts['distribution_major_version'] | int < 8 else 'dnf-utils' }}"
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
+    # Update systems using dnf with --nobest option if updates are available
+    - name: Update dnf systems with --nobest option if updates are available
+      ansible.builtin.shell: sudo dnf update -y --nobest
+      register: dnf_update_result
+      changed_when: "'No packages marked for update' not in dnf_update_result.stdout"
+      when: ansible_facts['os_family'] == "RedHat" and dnf_check_update.rc == 100
+
+    - name: Check if restart is needed on Red Hat based systems
+      ansible.builtin.shell: needs-restarting -r
+      register: needs_restarting_check
+      changed_when: needs_restarting_check.stdout != ""
+      when: ansible_facts['os_family'] == "RedHat" and dnf_check_update.rc == 100
+
+    - name: Restart Red Hat based system if required
+      ansible.builtin.reboot:
+      when: ansible_facts['os_family'] == "RedHat" and dnf_check_update.rc == 100 and needs_restarting_check.stdout != ""

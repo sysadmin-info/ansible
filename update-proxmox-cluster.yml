@@ -1,0 +1,72 @@
+---
+- name: Update Proxmox VE cluster nodes one by one
+  hosts: all
+  serial: 1
+  become: yes
+  vars:
+    ansible_port: 22
+
+  tasks:
+    - name: Check current Proxmox cluster status before update
+      ansible.builtin.command: pvecm status
+      register: pvecm_status_before
+      changed_when: false
+
+    - name: Fail if cluster is not quorate before update
+      ansible.builtin.fail:
+        msg: "Cluster is not quorate before update on {{ inventory_hostname }}"
+      when: "'Quorate:          Yes' not in pvecm_status_before.stdout"
+
+    - name: Check corosync link status before update
+      ansible.builtin.command: corosync-cfgtool -s
+      register: corosync_status_before
+      changed_when: false
+
+    - name: Fail if corosync peer is not connected before update
+      ansible.builtin.fail:
+        msg: "Corosync peer is not connected before update on {{ inventory_hostname }}"
+      when: "'connected' not in corosync_status_before.stdout"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade Proxmox packages
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot Proxmox node if required
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+      when: reboot_required_file.stat.exists
+
+    - name: Wait for node after possible reboot
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 10
+
+    - name: Check current Proxmox cluster status after update
+      ansible.builtin.command: pvecm status
+      register: pvecm_status_after
+      changed_when: false
+
+    - name: Fail if cluster is not quorate after update
+      ansible.builtin.fail:
+        msg: "Cluster is not quorate after update on {{ inventory_hostname }}"
+      when: "'Quorate:          Yes' not in pvecm_status_after.stdout"
+
+    - name: Check corosync link status after update
+      ansible.builtin.command: corosync-cfgtool -s
+      register: corosync_status_after
+      changed_when: false
+
+    - name: Fail if corosync peer is not connected after update
+      ansible.builtin.fail:
+        msg: "Corosync peer is not connected after update on {{ inventory_hostname }}"
+      when: "'connected' not in corosync_status_after.stdout"
